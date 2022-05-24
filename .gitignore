@@ -1,0 +1,26 @@
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+/.yarn/releases/** binary
+/.yarn/plugins/** binary
+
+# Dependencies
+.pnp.cjs
+.pnp.loader.mjs
+node_modules/
+jspm_packages/
+
+# Production
+lib/
+
+# Parcel
+dist/
+.parcel-cache
+
+# Misc
+.editorconfig
+.env
+.vscode

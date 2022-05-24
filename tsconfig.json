@@ -1,0 +1,31 @@
+{
+    "compilerOptions": {
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        "target": "es5",
+        "module": "commonjs",
+        "lib": ["es2018", "dom"],
+        "moduleResolution": "node",
+        "jsx": "react",
+        "rootDir": "src",
+        "declaration": true,
+        "removeComments": true,
+        "sourceMap": false,
+        "strict": true,
+        "allowJs": true,
+        "skipLibCheck": true,
+        "strictFunctionTypes": true,
+        "forceConsistentCasingInFileNames": true,
+        "strictNullChecks": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": false,
+        "noImplicitThis": true,
+        "noUnusedParameters": false,
+        "noUncheckedIndexedAccess": true,
+        "noFallthroughCasesInSwitch": true,
+        "noEmit": true,
+        "outDir": "lib"
+    },
+    "include": ["./src"],
+    "exclude": ["node_modules", "lib"]
+}

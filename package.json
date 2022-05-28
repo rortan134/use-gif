@@ -1,6 +1,6 @@
 {
     "name": "use-gif",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "React hook for creating client-side Gifs from DOM animations",
     "author": "rortan134 (https://github.com/rortan134)",
     "repository": {

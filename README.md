@@ -42,7 +42,7 @@ This library is powered by [Promises](https://developer.mozilla.org/en-US/docs/W
         const { start, render, abort } = useGif(ref, { background: "#fff" },
             // callback function
             async (result) => {
-                    console.log("result object:", resul
+                    console.log("result object:", result
                 // open gif in browser
                 window.open((await result).url);
             }

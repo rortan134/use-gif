@@ -123,6 +123,7 @@ const App = () => {
             quality: 5,
             background: "#fff",
             releaseMemory: false,
+            debugMode: true,
         },
         // callback function
         async (result) => {
@@ -173,7 +174,7 @@ const App = () => {
                         contentEditable="true"
                         suppressContentEditableWarning
                     >
-                        Wow!
+                        Text Here
                     </div>
                 </div>
             </div>

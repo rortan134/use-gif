@@ -21,7 +21,7 @@ import type { Ran } from "./types";
 export const promiseErr =
     "useGif: The browser doesn't support Promises, please try using a polyfill.";
 
-type framerateRange = Ran<61>; // 1 - 60 fps range
+type framerateRange = Ran<51>; // 1 - 60 fps range
 type qualityRange = Ran<11>; // 1 - 10 quality range
 
 type Status = "Idle" | "Recording" | "Processing";
@@ -71,7 +71,7 @@ export const defaultOptions: GifOptions = {
     releaseMemory: true,
     offset: { x: 0, y: 0 },
     debugMode: false,
-    smoothing: false,
+    smoothing: true,
     overrideHtml2Canvas: {},
 };
 
@@ -246,14 +246,13 @@ const useGif = <T extends HTMLElement | null>(
             if (elapsed.current >= timestep.current) {
                 then.current =
                     now.current - (elapsed.current % timestep.current);
-
                 // add frame to gif
                 handler.addFrame(
                     await captureSnapshot(ref.current as HTMLElement), // capture DOM element as canvas
                     {
                         delay:
                             timestep.current +
-                            (settings.smoothing ? timestep.current : 0),
+                            (!settings.smoothing ? timestep.current : 0),
                         copy: true,
                     }
                 );
@@ -274,7 +273,9 @@ const useGif = <T extends HTMLElement | null>(
     );
 
     useEffect(() => {
-        return () => window.cancelAnimationFrame(_animationFrame.current);
+        return () => {
+            return window.cancelAnimationFrame(_animationFrame.current);
+        };
     }, []);
 
     useEffect(() => {
@@ -284,89 +285,7 @@ const useGif = <T extends HTMLElement | null>(
         }
     }, [active, recordFrames]);
 
-    const start = useCallback(() => {
-        if (!ref.current) {
-            throw new Error("useGif: Element was not provided.");
-        }
-
-        if (settings.debugMode) {
-            console.log("useGif: Debug Mode Enabled");
-        }
-
-        const videosExist = videos && videos.length > 0;
-
-        if (videosExist) {
-            for (let i = 0, len = videos.length; i < len; i++) {
-                const v = videos[i] as HTMLVideoElement;
-                v.style.backgroundSize = "cover"; // optimize videos for later
-            }
-
-            if (settings.debugMode) {
-                console.warn(
-                    "useGif: Video(s) found: rendering video frames may cause FPS drops. You can safely ignore this warning."
-                );
-            }
-        }
-
-        handler.on("start", function () {
-            setIsRendering(true);
-            setActive(false);
-            setStatus("Processing");
-
-            startTime.current = 0;
-            elapsed.current = 0;
-            then.current = 0;
-            now.current = 0;
-
-            if (videosExist) {
-                for (let i = 0, len = videos.length; i < len; i++) {
-                    const v = videos[i] as HTMLVideoElement;
-                    v.style.backgroundImage = "";
-                    v.style.backgroundSize = "initial";
-                }
-            }
-        });
-
-        handler.on("progress", function (progress) {
-            setProgress(progress * 100);
-        });
-
-        setResult(() => {
-            return new Promise((resolve) => {
-                handler.on("finished", function (blob, data) {
-                    const rawResult = {
-                        element: ref.current,
-                        blobFormat: blob,
-                        url: URL.createObjectURL(blob),
-                        data: data,
-                    };
-
-                    setStatus("Idle");
-                    setIsRendering(false);
-                    setProgress(0);
-                    resolve(rawResult);
-
-                    // https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL#memory_management
-                    if (settings.releaseMemory === true) {
-                        setTimeout(() => {
-                            URL.revokeObjectURL(rawResult.url);
-                        }, 5000);
-                    }
-                });
-            });
-        });
-
-        if (ref.current instanceof HTMLElement) {
-            setActive(true);
-        } else {
-            console.error("useGif: Invalid element provided.");
-        }
-
-        then.current = window.performance.now();
-        startTime.current = then.current;
-    }, [handler, ref, settings.debugMode, settings.releaseMemory, videos]);
-
-    const render = () => {
+    const render = useCallback(() => {
         if (!active) {
             throw new Error("GIF must first be started before rendering");
         }
@@ -377,9 +296,9 @@ const useGif = <T extends HTMLElement | null>(
         }
 
         handler.render();
-    };
+    }, [active, handler]);
 
-    const abort = () => {
+    const abort = useCallback(() => {
         if (!active) {
             throw new Error("GIF must first be started before aborting");
         }
@@ -390,7 +309,106 @@ const useGif = <T extends HTMLElement | null>(
         }
 
         handler.abort();
-    };
+    }, [active, handler]);
+
+    const start = useCallback(
+        (duration?: number) => {
+            if (!ref.current) {
+                throw new Error("useGif: Element was not provided.");
+            }
+
+            if (settings.debugMode) {
+                console.log("useGif: Debug Mode Enabled");
+            }
+
+            const timeout =
+                duration && duration > 0
+                    ? setTimeout(render, duration)
+                    : undefined;
+
+            const videosExist = videos && videos.length > 0;
+
+            if (videosExist) {
+                for (let i = 0, len = videos.length; i < len; i++) {
+                    const v = videos[i] as HTMLVideoElement;
+                    v.style.backgroundSize = "cover"; // optimize videos for later
+                }
+
+                if (settings.debugMode) {
+                    console.warn(
+                        "useGif: Video(s) found: rendering video frames may cause FPS drops. You can safely ignore this warning."
+                    );
+                }
+            }
+
+            handler.on("start", function () {
+                clearTimeout(timeout);
+
+                setIsRendering(true);
+                setActive(false);
+                setStatus("Processing");
+
+                startTime.current = 0;
+                elapsed.current = 0;
+                then.current = 0;
+                now.current = 0;
+
+                if (videosExist) {
+                    for (let i = 0, len = videos.length; i < len; i++) {
+                        const v = videos[i] as HTMLVideoElement;
+                        v.style.backgroundImage = "";
+                        v.style.backgroundSize = "initial";
+                    }
+                }
+            });
+
+            handler.on("progress", function (progress) {
+                setProgress(progress * 100);
+            });
+
+            setResult(() => {
+                return new Promise((resolve) => {
+                    handler.on("finished", function (blob, data) {
+                        const rawResult = {
+                            element: ref.current,
+                            blobFormat: blob,
+                            url: URL.createObjectURL(blob),
+                            data: data,
+                        };
+
+                        setStatus("Idle");
+                        setIsRendering(false);
+                        setProgress(0);
+                        resolve(rawResult);
+
+                        // https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL#memory_management
+                        if (settings.releaseMemory === true) {
+                            setTimeout(() => {
+                                URL.revokeObjectURL(rawResult.url);
+                            }, 5000);
+                        }
+                    });
+                });
+            });
+
+            if (ref.current instanceof HTMLElement) {
+                setActive(true);
+            } else {
+                console.error("useGif: Invalid element provided.");
+            }
+
+            then.current = window.performance.now();
+            startTime.current = then.current;
+        },
+        [
+            handler,
+            ref,
+            render,
+            settings.debugMode,
+            settings.releaseMemory,
+            videos,
+        ]
+    );
 
     return {
         start,

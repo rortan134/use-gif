@@ -1,5 +1,5 @@
 export const isValidFramerate = (value: number): number => {
-    if (value < 1 || value > 60) {
+    if (value < 1 || value > 50) {
         throw new Error(`Framerate range is 1 - 60, you provided ${value} `);
     } else return value;
 };

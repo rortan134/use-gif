@@ -1,4 +1,11 @@
-import { useState, useCallback, useRef, RefObject, useEffect } from "react";
+import {
+    useState,
+    useCallback,
+    useRef,
+    RefObject,
+    useEffect,
+    useMemo,
+} from "react";
 import html2canvas, { Options } from "html2canvas";
 import {
     fnIgnoreElements,
@@ -11,12 +18,15 @@ import { workerBlob } from "./gif.worker";
 
 import type { Ran } from "./types";
 
+export const promiseErr =
+    "useGif: The browser doesn't support Promises, please try using a polyfill.";
+
 type framerateRange = Ran<61>; // 1 - 60 fps range
 type qualityRange = Ran<11>; // 1 - 10 quality range
 
 type Status = "Idle" | "Recording" | "Processing";
 
-interface GifOptions {
+interface GifOptions extends Partial<Options> {
     framerate: framerateRange;
     quality: qualityRange;
     loop: boolean;
@@ -25,16 +35,16 @@ interface GifOptions {
     height?: number;
     offset: { x: number; y: number };
     releaseMemory: boolean;
-    debug: boolean;
+    debugMode: boolean;
     smoothing: boolean;
     overrideHtml2Canvas: Partial<Options>;
 }
 
-interface GifHandlers {
+interface UseGifHandlers {
     start: () => void;
     render: () => void;
     abort: () => void;
-    result: Promise<ResultType> | undefined;
+    result: Promise<UseGifResultType> | undefined;
 }
 
 interface GifAuxiliaryStates {
@@ -45,9 +55,9 @@ interface GifAuxiliaryStates {
     // getSnapshot: (element: HTMLElement) => void;
 }
 
-type GifReturnType = GifHandlers & GifAuxiliaryStates;
+type UseGifReturnType = UseGifHandlers & GifAuxiliaryStates;
 
-type ResultType = {
+type UseGifResultType = {
     blobFormat: Blob;
     url: string;
     data: Uint8Array;
@@ -60,7 +70,7 @@ export const defaultOptions: GifOptions = {
     background: null,
     releaseMemory: true,
     offset: { x: 0, y: 0 },
-    debug: false,
+    debugMode: false,
     smoothing: false,
     overrideHtml2Canvas: {},
 };
@@ -73,87 +83,101 @@ export const defaultOptions: GifOptions = {
  * Constraints: iframe tag is not supported. For any rendering issue please refer to Html2Canvas's github page https://github.com/niklasvh/html2canvas
  * @param ref - RefObject<HTMLElement | null>
  * @param options - Partial<GifOptions>
- * @param [callback] - (result: Promise<ResultType>) => void
+ * @param [callback] - (result: Promise<UseGifResultType>) => void
  * @returns Returns the following properties: start, render, abort, result, progress, status, isRecording, and isRendering state.
  */
-function useGif(
-    ref: RefObject<HTMLElement | null>,
-    options: Partial<GifOptions>,
-    callback?: (result: Promise<ResultType>) => void
-): GifReturnType | undefined {
-    useEffect(() => {
-        if (!ref.current) {
-            throw new Error("useGif: Gif element was not provided.");
-        }
-    }, [ref]);
-
-    const settings = Object.assign(defaultOptions, options);
+const useGif = <T extends HTMLElement | null>(
+    ref: RefObject<T>,
+    options: Partial<GifOptions> = {},
+    callback?: (result: Promise<UseGifResultType>) => void
+): UseGifReturnType | undefined => {
+    const settings = useMemo(
+        () => Object.assign(defaultOptions, options),
+        [options]
+    );
 
     const [active, setActive] = useState(false);
     const [isRendering, setIsRendering] = useState(false);
     const [progress, setProgress] = useState(0);
     const [status, setStatus] = useState<Status>("Idle");
 
+    const [result, setResult] = useState<Promise<UseGifResultType> | undefined>(
+        undefined
+    );
+
     const w = ref?.current?.clientWidth;
     const h = ref?.current?.clientHeight;
 
-    // delay between frames, defaults to 66.6ms
-    const timestep = useRef<number>(
-        1000 / isValidFramerate(settings.framerate)
-    );
+    // delay between frames, defaults to 66.6ms (15fps)
+    const timestep = useRef(1000 / isValidFramerate(settings.framerate));
 
-    // gif processor handler
-    const [handler] = useState(
-        () =>
-            new GIF({
-                workers: 4,
-                quality: isValidQuality(settings.quality),
-                workerScript: URL.createObjectURL(workerBlob),
-                repeat: settings.loop === false ? -1 : 0, // ignore other falsy values
-                debug: settings.debug,
-                width: settings.width ?? w,
-                height: settings.height ?? h,
-            })
-    );
+    useEffect(() => {
+        if (typeof Promise === "undefined" || !window.Promise) {
+            console.error(promiseErr);
+            return () => undefined;
+        }
+    }, []);
 
-    // to copy data from other elements
-    const tempCanvasRef = useRef<HTMLCanvasElement>(
+    useEffect(() => {
+        if (!result || !callback) return;
+        callback(result);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [result]);
+
+    // for copying temporary data
+    const offscreenCanvas = useRef<HTMLCanvasElement>(
         document.createElement("canvas")
     );
-    const [videos, setVideos] = useState<NodeListOf<HTMLVideoElement>>();
+    const [videos, setVideos] = useState<
+        NodeListOf<HTMLVideoElement> | undefined
+    >();
 
-    const captureVideos = useCallback(
+    useEffect(() => {
+        setVideos(ref.current?.parentElement?.querySelectorAll("video"));
+    }, [ref]);
+
+    const mutateVideoFrame = useCallback(
+        (
+            canvas: HTMLCanvasElement,
+            ctx: CanvasRenderingContext2D | null,
+            video: HTMLVideoElement,
+            h: number,
+            w: number
+        ) => {
+            canvas.width = w;
+            canvas.height = h;
+
+            if (video.readyState > 1 && ctx) {
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(video, 0, 0, w, h);
+                video.style.backgroundImage = `url(${canvas.toDataURL()})`; // Make video frame the background so it can be captured by html2canvas, this is a workaround
+                ctx.clearRect(0, 0, w, h);
+            }
+        },
+        []
+    );
+
+    const renderVideos = useCallback(
         (videos: NodeListOf<HTMLVideoElement>) => {
-            const canvas = tempCanvasRef.current;
-            const ctx = canvas.getContext("2d");
-
+            const canvas = offscreenCanvas.current;
+            const ctx = canvas.getContext("2d", { alpha: false });
             let h, w;
+
             for (let i = 0, len = videos.length; i < len; i++) {
                 const v = videos[i];
                 if (!v?.src) continue; // no video here
 
                 w = v.videoWidth;
                 h = v.videoHeight;
-                canvas.width = w;
-                canvas.height = h;
-                ctx?.fillRect(0, 0, w, h);
-                ctx?.drawImage(v, 0, 0, w, h);
-                v.style.backgroundImage = `url(${canvas.toDataURL()})`; // here is the magic
-                v.style.backgroundSize = "cover";
-                ctx?.clearRect(0, 0, w, h);
+                mutateVideoFrame(canvas, ctx, v, h, w);
             }
         },
-        []
+        [mutateVideoFrame]
     );
 
-    useEffect(() => {
-        const videos = ref.current?.parentElement?.querySelectorAll("video");
-        if (videos) setVideos(videos);
-    }, [ref]);
-
     const [snapshotSettings] = useState({
-        x: settings.offset.x ?? 0,
-        y: settings.offset.y ?? 0,
+        x: settings.offset.x,
+        y: settings.offset.y,
         scrollX: -window.scrollX,
         scrollY: -window.scrollY,
         width: w,
@@ -163,79 +187,144 @@ function useGif(
         ignoreElements: fnIgnoreElements,
         allowTaint: true,
         useCORS: true,
-        logging: settings.debug,
+        logging: settings.debugMode,
         ...settings.overrideHtml2Canvas,
     });
 
-    // capture snapshot of the DOM
-    const getSnapshot = useCallback(
+    // snapshot of the DOM
+    const captureSnapshot = useCallback(
         async (element: HTMLElement) => {
             if (videos && videos.length > 0) {
-                captureVideos(videos);
+                renderVideos(videos);
             }
 
-            const snapshot = await html2canvas(element, {
+            return await html2canvas(element, {
                 windowWidth: document.documentElement.offsetWidth,
                 windowHeight: document.documentElement.offsetHeight,
                 ...snapshotSettings,
             });
-
-            return snapshot;
         },
-        [captureVideos, snapshotSettings, videos]
+        [renderVideos, snapshotSettings, videos]
     );
 
-    // throttle framerate using requestAnimationFrame
-    const animationFrame = useRef(0);
-    const [result, setResult] = useState<Promise<ResultType> | undefined>(
-        undefined
+    // gif processor handler
+    const [handler] = useState(
+        () =>
+            new GIF({
+                workers: 4,
+                quality: isValidQuality(settings.quality),
+                workerScript: URL.createObjectURL(workerBlob),
+                repeat: settings.loop === false ? -1 : 0, // ignore other falsy values such as null or undefined
+                debug: settings.debugMode,
+                width: settings.width ?? w,
+                height: settings.height ?? h,
+            })
     );
+
+    // throttle requestAnimationFrame depending on the framerate
+    const _animationFrame = useRef(0);
 
     const startTime = useRef(0);
     const elapsed = useRef(0);
     const now = useRef(0);
     const then = useRef(0);
 
-    const record = useCallback(
+    const recordFrames = useCallback(
         async (currentTime: number) => {
-            animationFrame.current = window.requestAnimationFrame(record);
+            if (!active) {
+                window.cancelAnimationFrame(_animationFrame.current);
+                return;
+            }
+
+            _animationFrame.current =
+                window.requestAnimationFrame(recordFrames);
             now.current = currentTime;
 
             elapsed.current = now.current - then.current;
 
-            // if enough time has passed since the last frame depending on the framerate
-            if (elapsed.current > timestep.current) {
+            // if enough time has passed since the last frame
+            if (elapsed.current >= timestep.current) {
                 then.current =
                     now.current - (elapsed.current % timestep.current);
 
-                // add frame to gif file
+                // add frame to gif
                 handler.addFrame(
-                    await getSnapshot(ref.current as HTMLElement),
+                    await captureSnapshot(ref.current as HTMLElement), // capture DOM element as canvas
                     {
                         delay:
                             timestep.current +
-                            (settings.smoothing ? elapsed.current : 0),
+                            (settings.smoothing ? timestep.current : 0),
                         copy: true,
                     }
                 );
+
+                if (settings.debugMode) {
+                    console.log(`Frame added in ${elapsed.current}ms`); // expected result = 66.6ms
+                }
             }
         },
-        [getSnapshot, handler, settings.smoothing, ref]
+        [
+            active,
+            captureSnapshot,
+            handler,
+            ref,
+            settings.debugMode,
+            settings.smoothing,
+        ]
     );
 
     useEffect(() => {
+        return () => window.cancelAnimationFrame(_animationFrame.current);
+    }, []);
+
+    useEffect(() => {
         if (active) {
-            record(0);
+            recordFrames(0);
             setStatus("Recording");
         }
-    }, [active, record]);
+    }, [active, recordFrames]);
 
     const start = useCallback(() => {
-        if (!ref.current) return;
+        if (!ref.current) {
+            throw new Error("useGif: Element was not provided.");
+        }
+
+        if (settings.debugMode) {
+            console.log("useGif: Debug Mode Enabled");
+        }
+
+        const videosExist = videos && videos.length > 0;
+
+        if (videosExist) {
+            for (let i = 0, len = videos.length; i < len; i++) {
+                const v = videos[i] as HTMLVideoElement;
+                v.style.backgroundSize = "cover"; // optimize videos for later
+            }
+
+            if (settings.debugMode) {
+                console.warn(
+                    "useGif: Video(s) found: rendering video frames may cause FPS drops. You can safely ignore this warning."
+                );
+            }
+        }
 
         handler.on("start", function () {
             setIsRendering(true);
+            setActive(false);
             setStatus("Processing");
+
+            startTime.current = 0;
+            elapsed.current = 0;
+            then.current = 0;
+            now.current = 0;
+
+            if (videosExist) {
+                for (let i = 0, len = videos.length; i < len; i++) {
+                    const v = videos[i] as HTMLVideoElement;
+                    v.style.backgroundImage = "";
+                    v.style.backgroundSize = "initial";
+                }
+            }
         });
 
         handler.on("progress", function (progress) {
@@ -246,14 +335,16 @@ function useGif(
             return new Promise((resolve) => {
                 handler.on("finished", function (blob, data) {
                     const rawResult = {
+                        element: ref.current,
                         blobFormat: blob,
                         url: URL.createObjectURL(blob),
                         data: data,
                     };
 
-                    resolve(rawResult);
                     setStatus("Idle");
                     setIsRendering(false);
+                    setProgress(0);
+                    resolve(rawResult);
 
                     // https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL#memory_management
                     if (settings.releaseMemory === true) {
@@ -267,25 +358,23 @@ function useGif(
 
         if (ref.current instanceof HTMLElement) {
             setActive(true);
+        } else {
+            console.error("useGif: Invalid element provided.");
         }
 
         then.current = window.performance.now();
         startTime.current = then.current;
-    }, [handler, ref, settings.releaseMemory]);
-
-    useEffect(() => {
-        if (!result || !callback) return;
-        callback(result);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [result]);
+    }, [handler, ref, settings.debugMode, settings.releaseMemory, videos]);
 
     const render = () => {
         if (!active) {
             throw new Error("GIF must first be started before rendering");
         }
 
-        window.cancelAnimationFrame(animationFrame.current);
         setActive(false);
+        if (_animationFrame.current) {
+            window.cancelAnimationFrame(_animationFrame.current);
+        }
 
         handler.render();
     };
@@ -295,8 +384,10 @@ function useGif(
             throw new Error("GIF must first be started before aborting");
         }
 
-        window.cancelAnimationFrame(animationFrame.current);
         setActive(false);
+        if (_animationFrame.current) {
+            window.cancelAnimationFrame(_animationFrame.current);
+        }
 
         handler.abort();
     };
@@ -311,6 +402,6 @@ function useGif(
         isRecording: active,
         isRendering,
     };
-}
+};
 
 export { useGif };

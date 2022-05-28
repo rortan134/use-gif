@@ -1,7 +1,7 @@
 {
     "name": "use-gif",
-    "version": "2.0.0",
-    "description": "React hook for creating client-side Gifs from DOM animations",
+    "version": "1.0.0",
+    "description": "React hook for creating client-side GIFs from DOM animations",
     "author": "rortan134 (https://github.com/rortan134)",
     "repository": {
         "type": "git",

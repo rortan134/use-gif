@@ -1,5 +1,12 @@
 # use-gif
 
+[![npm version](https://img.shields.io/npm/v/use-gif?style=flat-square)](https://www.npmjs.com/package/use-gif)
+[![gzip size](https://badgen.net/bundlephobia/minzip/use-gif?label=gzip%20size&style=flat-square)](https://bundlephobia.com/result?p=use-gif)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
+[![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
+<a href="https://github.com/rortan134/use-gif" target="\_parent">
+  <img alt="" src="https://img.shields.io/github/stars/rortan134/use-gif.svg?style=social&label=Star" />
+</a>
 ### React hook for creating client-side GIFs from DOM animations.
 
 <br/>

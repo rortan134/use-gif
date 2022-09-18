@@ -31,7 +31,7 @@ module.exports = {
                 "plugin:@typescript-eslint/recommended",
             ],
             settings: {
-                react: { version: "detect" },
+                react: { version: "detect" }
             },
             rules: {
                 "@typescript-eslint/no-unused-vars": ["warn"],

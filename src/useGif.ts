@@ -176,10 +176,10 @@ const useGif = <T extends HTMLElement | null>(
     );
 
     const [snapshotSettings] = useState({
-        x: settings.offset.x,
-        y: settings.offset.y,
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY,
+        x: settings.offset.x > 0 ? window.pageXOffset : 0,
+        y: settings.offset.y > 0 ? window.pageYOffset : 0,
+        scrollX: window.pageXOffset,
+        scrollY: window.pageYOffset,
         width: w,
         height: h,
         foreignObjectRendering: true,

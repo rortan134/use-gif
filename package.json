@@ -72,5 +72,19 @@
     "resolutions": {
         "@types/react": "^16.9.41",
         "@types/react-dom": "^16.9.8"
+    },
+    "jest": {
+        "transform": {
+            ".(ts|tsx)": "ts-jest"
+        },
+        "testRegex": "(/__tests__/.*|\\.(test|spec))\\.(ts|tsx|js)$",
+        "moduleFileExtensions": [
+            "ts",
+            "tsx",
+            "js"
+        ],
+        "modulePathIgnorePatterns": [
+            "<rootDir>/dist/"
+        ]
     }
 }
